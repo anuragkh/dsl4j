@@ -8,7 +8,11 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryUsage;
 import java.util.ArrayList;
+import java.util.List;
 
 public class Construct {
   public static void main(String[] args) throws IOException {
@@ -24,6 +28,7 @@ public class Construct {
       type = args[2];
     }
 
+    long start = System.currentTimeMillis();
     if (type.equals("file")) {
       if (args[0].endsWith(".succinct")) {
         succinctFileBuffer = new SuccinctFileBuffer(args[0], StorageMode.MEMORY_ONLY);
@@ -70,7 +75,25 @@ public class Construct {
     } else {
       throw new UnsupportedOperationException("Unsupported mode: " + type);
     }
+    long end = System.currentTimeMillis();
+    System.out.println("Time to construct: " + (end - start) / 1000 + "s");
 
     succinctFileBuffer.writeToFile(args[1]);
+
+    try {
+      String memoryUsage = new String();
+      List<MemoryPoolMXBean> pools = ManagementFactory.getMemoryPoolMXBeans();
+      for (MemoryPoolMXBean pool : pools) {
+        MemoryUsage peak = pool.getPeakUsage();
+        memoryUsage += String.format("Peak %s memory used: %,d%n", pool.getName(), peak.getUsed());
+        memoryUsage += String.format("Peak %s memory reserved: %,d%n", pool.getName(), peak.getCommitted());
+      }
+
+      // we print the result in the console
+      System.out.println(memoryUsage);
+
+    } catch (Throwable t) {
+      System.err.println("Exception in agent: " + t);
+    }
   }
 }
