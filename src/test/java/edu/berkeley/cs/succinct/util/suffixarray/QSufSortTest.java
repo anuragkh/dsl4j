@@ -1,4 +1,4 @@
-package edu.berkeley.cs.succinct.util.qsufsort;
+package edu.berkeley.cs.succinct.util.suffixarray;
 
 import edu.berkeley.cs.succinct.SuccinctCore;
 import edu.berkeley.cs.succinct.util.IOUtils;

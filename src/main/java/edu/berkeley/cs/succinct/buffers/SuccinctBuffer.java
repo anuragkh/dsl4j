@@ -8,7 +8,7 @@ import edu.berkeley.cs.succinct.util.buffer.ThreadSafeByteBuffer;
 import edu.berkeley.cs.succinct.util.buffer.ThreadSafeIntBuffer;
 import edu.berkeley.cs.succinct.util.buffer.ThreadSafeLongBuffer;
 import edu.berkeley.cs.succinct.util.container.Pair;
-import edu.berkeley.cs.succinct.util.qsufsort.QSufSort;
+import edu.berkeley.cs.succinct.util.suffixarray.QSufSort;
 import edu.berkeley.cs.succinct.util.serops.ArrayOps;
 import edu.berkeley.cs.succinct.util.serops.DeltaEncodedIntVectorOps;
 import edu.berkeley.cs.succinct.util.serops.IntVectorOps;

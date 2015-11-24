@@ -1,10 +1,10 @@
-package edu.berkeley.cs.succinct.util.qsufsort;
+package edu.berkeley.cs.succinct.util.suffixarray;
 
 import gnu.trove.set.hash.TByteHashSet;
 
 import java.util.Arrays;
 
-public class QSufSort {
+public final class QSufSort {
   /**
    * group array, ultimately suffix array.
    */

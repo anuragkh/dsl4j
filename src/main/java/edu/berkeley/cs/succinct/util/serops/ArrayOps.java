@@ -5,9 +5,9 @@ import java.nio.IntBuffer;
 public class ArrayOps {
 
   /**
-   * Get rank1 value at specified index in serialized Long array.
+   * Get rank1 value at specified index in serialized Integer array.
    *
-   * @param arrayBuf Serialized Long array.
+   * @param arrayBuf Serialized Integer array.
    * @param startPos Start position.
    * @param size     Size of array.
    * @param i        Rank query.
