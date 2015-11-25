@@ -1,6 +1,7 @@
 package edu.berkeley.cs.succinct.util.buffer;
 
 import java.nio.Buffer;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 
@@ -19,7 +20,7 @@ public class ThreadSafeIntBuffer {
   }
 
   public static ThreadSafeIntBuffer allocate(int capacity) {
-    return new ThreadSafeIntBuffer(IntBuffer.allocate(capacity));
+    return new ThreadSafeIntBuffer(ByteBuffer.allocateDirect(capacity * 4).asIntBuffer());
   }
 
   public static ThreadSafeIntBuffer wrap(int[] array) {

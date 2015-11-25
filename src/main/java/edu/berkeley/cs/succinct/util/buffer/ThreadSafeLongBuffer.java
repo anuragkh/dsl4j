@@ -1,6 +1,7 @@
 package edu.berkeley.cs.succinct.util.buffer;
 
 import java.nio.Buffer;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 
@@ -19,7 +20,7 @@ public class ThreadSafeLongBuffer {
   }
 
   public static ThreadSafeLongBuffer allocate(int capacity) {
-    return new ThreadSafeLongBuffer(LongBuffer.allocate(capacity));
+    return new ThreadSafeLongBuffer(ByteBuffer.allocateDirect(capacity * 8).asLongBuffer());
   }
 
   public static ThreadSafeLongBuffer wrap(long[] array) {

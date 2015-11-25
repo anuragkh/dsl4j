@@ -16,7 +16,6 @@ import edu.berkeley.cs.succinct.util.container.IntArray;
  */
 public class SAIS {
 
-
   /* find the start or end of each bucket */
   private static void getCounts(BasicArray T, BasicArray C, int n, int k) {
     for (int i = 0; i < k; ++i) {
