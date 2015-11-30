@@ -6,8 +6,7 @@ import edu.berkeley.cs.succinct.util.container.CharArray;
 import edu.berkeley.cs.succinct.util.container.IntArray;
 
 /**
- * SA-IS algorithm, ported from Yuta Mori's implementation. Uses unsafe memory to limit memory
- * consumption.
+ * SA-IS algorithm, ported from Yuta Mori's implementation.
  *
  * Ge Nong, Sen Zhang and Wai Hong Chan, Two Efficient Algorithms for Linear Suffix Array
  * Construction, 2008.

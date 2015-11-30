@@ -236,6 +236,8 @@ public class SuccinctBuffer extends SuccinctCore {
     SA = suffixSorter.getSA();
     ISA = suffixSorter.getISA();
 
+    System.out.println("Constructed SA, ISA");
+
     // Set metadata
     setOriginalSize(input.length);
     setSamplingRate(32);                // FIXME: Hard-coded
@@ -279,12 +281,16 @@ public class SuccinctBuffer extends SuccinctCore {
     }
     alphabetmap.rewind();
 
+    System.out.println("Computed Alphabet, AlphabetMap, ColumnOffsets");
+
     // Construct NPA
     int[] NPA = new int[getOriginalSize()];
     for (int i = 1; i < getOriginalSize(); i++) {
       NPA[ISA[i - 1]] = ISA[i];
     }
     NPA[ISA[getOriginalSize() - 1]] = ISA[0];
+
+    System.out.println("Computed uncompressed NPA");
 
     columns = new ThreadSafeByteBuffer[getAlphabetSize()];
     for (int i = 0; i < getAlphabetSize(); i++) {
@@ -297,6 +303,8 @@ public class SuccinctBuffer extends SuccinctCore {
       columnVector.writeToBuffer(columns[i].buffer());
       columns[i].rewind();
     }
+
+    System.out.println("Constructed compressed NPA");
 
     // Sample SA, ISA
     IntVector sampledSA, sampledISA;
@@ -317,6 +325,8 @@ public class SuccinctBuffer extends SuccinctCore {
     sa.rewind();
     isa = ThreadSafeLongBuffer.wrap(sampledISA.getData());
     isa.rewind();
+
+    System.out.println("Constructed sampled SA, ISA");
   }
 
   /**
