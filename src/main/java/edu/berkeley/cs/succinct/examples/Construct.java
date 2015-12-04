@@ -1,6 +1,7 @@
 package edu.berkeley.cs.succinct.examples;
 
 import edu.berkeley.cs.succinct.StorageMode;
+import edu.berkeley.cs.succinct.SuccinctCore;
 import edu.berkeley.cs.succinct.buffers.SuccinctFileBuffer;
 import edu.berkeley.cs.succinct.buffers.SuccinctIndexedFileBuffer;
 
@@ -13,6 +14,7 @@ import java.lang.management.MemoryPoolMXBean;
 import java.lang.management.MemoryUsage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
 
 public class Construct {
   public static void main(String[] args) throws IOException {
@@ -20,6 +22,9 @@ public class Construct {
       System.err.println("Parameters: [input-path] [output-path] <[type]>");
       System.exit(-1);
     }
+
+    // Enable logging
+    SuccinctCore.logger.setLevel(Level.ALL);
 
     SuccinctFileBuffer succinctFileBuffer;
 
