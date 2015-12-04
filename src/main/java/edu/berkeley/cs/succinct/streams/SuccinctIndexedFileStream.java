@@ -1,6 +1,5 @@
-package edu.berkeley.cs.succinct.buffers;
+package edu.berkeley.cs.succinct.streams;
 
-import edu.berkeley.cs.succinct.StorageMode;
 import edu.berkeley.cs.succinct.SuccinctCore;
 import edu.berkeley.cs.succinct.SuccinctIndexedFile;
 import edu.berkeley.cs.succinct.regex.RegExMatch;
@@ -8,74 +7,71 @@ import edu.berkeley.cs.succinct.regex.parser.RegExParsingException;
 import edu.berkeley.cs.succinct.util.container.Range;
 import edu.berkeley.cs.succinct.util.iterator.SearchIterator;
 import edu.berkeley.cs.succinct.util.iterator.SearchRecordIterator;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.Path;
 
-import java.io.*;
-import java.nio.ByteBuffer;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.*;
 
-public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements SuccinctIndexedFile {
+public class SuccinctIndexedFileStream extends SuccinctFileStream implements SuccinctIndexedFile {
 
-  private static final long serialVersionUID = -8357331195541317163L;
   protected transient int[] offsets;
+  protected transient long endOfIndexedFileStream;
 
   /**
-   * Constructor to initialize SuccinctIndexedBuffer from input byte array and offsets corresponding to records.
+   * Constructor to map a file containing Succinct data structures via stream.
    *
-   * @param input   The input byte array.
-   * @param offsets Offsets corresponding to records.
+   * @param filePath Path of the file.
+   * @param conf     Configuration for the filesystem.
+   * @throws IOException
    */
-  public SuccinctIndexedFileBuffer(byte[] input, int[] offsets) {
-    super(input);
-    this.offsets = offsets;
-  }
-
-  /**
-   * Constructor to load the data from persisted Succinct data-structures.
-   *
-   * @param path        Path to load data from.
-   * @param storageMode Mode in which data is stored (In-memory or Memory-mapped)
-   */
-  public SuccinctIndexedFileBuffer(String path, StorageMode storageMode) {
-    super(path, storageMode);
-  }
-
-  /**
-   * Constructor to load the data from a DataInputStream.
-   *
-   * @param is Input stream to load the data from
-   */
-  public SuccinctIndexedFileBuffer(DataInputStream is) {
-    try {
-      readFromStream(is);
-    } catch (IOException e) {
-      e.printStackTrace();
+  public SuccinctIndexedFileStream(Path filePath, Configuration conf) throws IOException {
+    super(filePath, conf);
+    FSDataInputStream is = getStream(filePath);
+    is.seek(endOfFileStream);
+    int len = is.readInt();
+    offsets = new int[len];
+    for (int i = 0; i < len; i++) {
+      offsets[i] = is.readInt();
     }
+    endOfIndexedFileStream = is.getPos();
+    is.close();
   }
 
   /**
-   * Constructor to load the data from a ByteBuffer.
+   * Constructor to map a file containing Succinct data structures via stream.
    *
-   * @param buf Input buffer to load the data from
+   * @param filePath Path of the file.
+   * @throws IOException
    */
-  public SuccinctIndexedFileBuffer(ByteBuffer buf) {
-    super(buf);
+  public SuccinctIndexedFileStream(Path filePath) throws IOException {
+    this(filePath, new Configuration());
   }
 
-  /**
-   * Get the number of records.
-   *
-   * @return The number of records.
-   */
-  @Override public int getNumRecords() {
+  public int offsetToRecordId(int pos) {
+    int sp = 0, ep = offsets.length - 1;
+    int m;
+
+    while (sp <= ep) {
+      m = (sp + ep) / 2;
+      if (offsets[m] == pos) {
+        return m;
+      } else if (pos < offsets[m]) {
+        ep = m - 1;
+      } else {
+        sp = m + 1;
+      }
+    }
+
+    return ep;
+  }
+
+  public int getNumRecords() {
     return offsets.length;
   }
 
-  /**
-   * Get the offset for a given recordId
-   *
-   * @param recordId The record id.
-   * @return The corresponding offset.
-   */
   @Override public int getRecordOffset(int recordId) {
     if (recordId >= offsets.length || recordId < 0) {
       throw new ArrayIndexOutOfBoundsException(
@@ -85,12 +81,6 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
     return offsets[recordId];
   }
 
-  /**
-   * Get the ith record.
-   *
-   * @param recordId The record index.
-   * @return The corresponding record.
-   */
   @Override public byte[] getRecord(int recordId) {
     if (recordId >= offsets.length || recordId < 0) {
       throw new ArrayIndexOutOfBoundsException(
@@ -130,38 +120,8 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
     return out.toByteArray();
   }
 
-  /**
-   * Search for offset corresponding to a position in the input.
-   *
-   * @param pos Position in the input
-   * @return Offset corresponding to the position.
-   */
-  @Override public int offsetToRecordId(int pos) {
-    int sp = 0, ep = offsets.length - 1;
-    int m;
-
-    while (sp <= ep) {
-      m = (sp + ep) / 2;
-      if (offsets[m] == pos) {
-        return m;
-      } else if (pos < offsets[m]) {
-        ep = m - 1;
-      } else {
-        sp = m + 1;
-      }
-    }
-
-    return ep;
-  }
-
-  /**
-   * Search for an input query and return offsets of all matching records.
-   *
-   * @param query Input query.
-   * @return Offsets of all matching records.
-   */
-  @Override public Integer[] recordSearchIds(byte[] query) {
-    Set<Integer> results = new HashSet<>();
+  public Integer[] recordSearchIds(byte[] query) {
+    Set<Integer> results = new HashSet<Integer>();
     Range range = bwdSearch(query);
 
     long sp = range.first, ep = range.second;
@@ -182,11 +142,11 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
   }
 
   /**
-   * Check if the two offsets belong to the same record.
+   * Check if the two recordIds belong to the same record.
    *
    * @param firstOffset The first offset.
    * @param secondOffset The second offset.
-   * @return True if the two offsets belong to the same record, false otherwise.
+   * @return True if the two recordIds belong to the same record, false otherwise.
    */
   @Override public boolean sameRecord(long firstOffset, long secondOffset) {
     return offsetToRecordId((int) firstOffset) == offsetToRecordId((int) secondOffset);
@@ -201,7 +161,7 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
    */
   @Override public Integer[] recordSearchRegexIds(String query) throws RegExParsingException {
     Set<RegExMatch> regexOffsetResults = regexSearch(query);
-    Set<Integer> recordIds = new HashSet<>();
+    Set<Integer> recordIds = new HashSet<Integer>();
     for (RegExMatch m : regexOffsetResults) {
       int recordId = offsetToRecordId((int) m.getOffset());
       if (!recordIds.contains(recordId)) {
@@ -211,23 +171,16 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
     return recordIds.toArray(new Integer[recordIds.size()]);
   }
 
-  /**
-   * Perform multiple searches with different query types and return the intersection of the results.
-   *
-   * @param queryTypes The QueryType corresponding to each query
-   * @param queries    The actual query parameters associated with each query
-   * @return The records matching the multi-search queries.
-   */
   @Override public Integer[] recordMultiSearchIds(QueryType[] queryTypes, byte[][][] queries) {
     assert (queryTypes.length == queries.length);
-    Set<Integer> recordIds = new HashSet<>();
+    Set<Integer> recordIds = new HashSet<Integer>();
 
     if (queries.length == 0) {
       throw new IllegalArgumentException("recordMultiSearchIds called with empty queries");
     }
 
     // Get all ranges
-    ArrayList<Range> ranges = new ArrayList<>();
+    ArrayList<Range> ranges = new ArrayList<Range>();
     for (int qid = 0; qid < queries.length; qid++) {
       Range range;
 
@@ -256,9 +209,9 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
 
     Collections.sort(ranges, new RangeSizeComparator());
 
-    // Populate the set of offsets corresponding to the first range
+    // Populate the set of recordIds corresponding to the first range
     Range firstRange = ranges.get(0);
-    Map<Integer, Integer> counts = new HashMap<>();
+    Map<Integer, Integer> counts = new HashMap<Integer, Integer>();
     {
       long sp = firstRange.first, ep = firstRange.second;
       for (long i = 0; i < ep - sp + 1; i++) {
@@ -272,6 +225,7 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
     ranges.remove(firstRange);
     for (Range range : ranges) {
       long sp = range.first, ep = range.second;
+
       for (long i = 0; i < ep - sp + 1; i++) {
         long saVal = lookupSA(sp + i);
         int recordId = offsetToRecordId((int) saVal);
@@ -282,68 +236,5 @@ public class SuccinctIndexedFileBuffer extends SuccinctFileBuffer implements Suc
     }
 
     return recordIds.toArray(new Integer[recordIds.size()]);
-  }
-
-  /**
-   * Write Succinct data structures to a DataOutputStream.
-   *
-   * @param os Output stream to write data to.
-   * @throws IOException
-   */
-  @Override public void writeToStream(DataOutputStream os) throws IOException {
-    super.writeToStream(os);
-    os.writeInt(offsets.length);
-    for (int i = 0; i < offsets.length; i++) {
-      os.writeInt(offsets[i]);
-    }
-  }
-
-  /**
-   * Reads Succinct data structures from a DataInputStream.
-   *
-   * @param is Stream to read data structures from.
-   * @throws IOException
-   */
-  @Override public void readFromStream(DataInputStream is) throws IOException {
-    super.readFromStream(is);
-    int len = is.readInt();
-    offsets = new int[len];
-    for (int i = 0; i < len; i++) {
-      offsets[i] = is.readInt();
-    }
-  }
-
-  /**
-   * Reads Succinct data structures from a ByteBuffer.
-   *
-   * @param buf ByteBuffer to read Succinct data structures from.
-   */
-  @Override public void mapFromBuffer(ByteBuffer buf) {
-    super.mapFromBuffer(buf);
-    int len = buf.getInt();
-    offsets = new int[len];
-    for (int i = 0; i < offsets.length; i++) {
-      offsets[i] = buf.getInt();
-    }
-  }
-
-  /**
-   * Serialize SuccinctIndexedBuffer to OutputStream.
-   *
-   * @param oos ObjectOutputStream to write to.
-   * @throws IOException
-   */
-  private void writeObject(ObjectOutputStream oos) throws IOException {
-    oos.writeObject(offsets);
-  }
-
-  /**
-   * Deserialize SuccinctIndexedBuffer from InputStream.
-   *
-   * @param ois ObjectInputStream to read from.
-   * @throws IOException
-   */
-  private void readObject(ObjectInputStream ois) throws ClassNotFoundException, IOException {
-    offsets = (int[]) ois.readObject();
   }
 }

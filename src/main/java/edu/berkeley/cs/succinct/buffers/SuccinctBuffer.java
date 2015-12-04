@@ -4,13 +4,13 @@ import edu.berkeley.cs.succinct.StorageMode;
 import edu.berkeley.cs.succinct.SuccinctCore;
 import edu.berkeley.cs.succinct.util.BitUtils;
 import edu.berkeley.cs.succinct.util.CommonUtils;
+import edu.berkeley.cs.succinct.util.SuccinctConstants;
 import edu.berkeley.cs.succinct.util.buffer.ThreadSafeByteBuffer;
-import edu.berkeley.cs.succinct.util.buffer.ThreadSafeIntBuffer;
 import edu.berkeley.cs.succinct.util.buffer.ThreadSafeLongBuffer;
 import edu.berkeley.cs.succinct.util.container.Pair;
-import edu.berkeley.cs.succinct.util.serops.ArrayOps;
-import edu.berkeley.cs.succinct.util.serops.DeltaEncodedIntVectorOps;
-import edu.berkeley.cs.succinct.util.serops.IntVectorOps;
+import edu.berkeley.cs.succinct.util.buffer.serops.ArrayOps;
+import edu.berkeley.cs.succinct.util.buffer.serops.DeltaEncodedIntVectorOps;
+import edu.berkeley.cs.succinct.util.buffer.serops.IntVectorOps;
 import edu.berkeley.cs.succinct.util.suffixarray.QSufSort;
 import edu.berkeley.cs.succinct.util.vector.DeltaEncodedIntVector;
 import edu.berkeley.cs.succinct.util.vector.IntVector;
@@ -27,17 +27,13 @@ import java.util.HashMap;
 
 public class SuccinctBuffer extends SuccinctCore {
 
-  // Default Sampling Rate
-  public static final int DEFAULT_SA_SAMPLING_RATE = 32;
-  public static final int DEFAULT_NPA_SAMPLING_RATE = 128;
-
   // To maintain versioning
   private static final long serialVersionUID = 1382615274437547247L;
 
   // Serialized data structures
   protected transient ThreadSafeLongBuffer sa;
   protected transient ThreadSafeLongBuffer isa;
-  protected transient ThreadSafeIntBuffer columnoffsets;
+  protected transient ThreadSafeLongBuffer columnoffsets;
   protected transient ThreadSafeByteBuffer[] columns;
 
   // Storage mode
@@ -137,11 +133,12 @@ public class SuccinctBuffer extends SuccinctCore {
     }
 
     int j = 0;
-    while (i % getSamplingRate() != 0) {
+    while (i % getSamplingRateSA() != 0) {
       i = lookupNPA(i);
       j++;
     }
-    long saVal = IntVectorOps.get(sa.buffer(), (int) (i / getSamplingRate()), getSampleBitWidth());
+    long saVal =
+      IntVectorOps.get(sa.buffer(), (int) (i / getSamplingRateSA()), getSampleBitWidth());
 
     if (saVal < j)
       return getOriginalSize() - (j - saVal);
@@ -161,9 +158,9 @@ public class SuccinctBuffer extends SuccinctCore {
         "ISA index out of bounds: i = " + i + " originalSize = " + getOriginalSize());
     }
 
-    int sampleIdx = (int) (i / getSamplingRate());
+    int sampleIdx = (int) (i / getSamplingRateISA());
     int pos = IntVectorOps.get(isa.buffer(), sampleIdx, getSampleBitWidth());
-    i -= (sampleIdx * getSamplingRate());
+    i -= (sampleIdx * getSamplingRateISA());
     while (i-- != 0) {
       pos = (int) lookupNPA(pos);
     }
@@ -258,11 +255,13 @@ public class SuccinctBuffer extends SuccinctCore {
 
       // Set metadata
       setOriginalSize(input.length);
-      setSamplingRate(DEFAULT_SA_SAMPLING_RATE);
+      setSamplingRateSA(SuccinctConstants.DEFAULT_SA_SAMPLING_RATE);
+      setSamplingRateISA(SuccinctConstants.DEFAULT_ISA_SAMPLING_RATE);
+      setSamplingRateNPA(SuccinctConstants.DEFAULT_NPA_SAMPLING_RATE);
       setSampleBitWidth(BitUtils.bitWidth(getOriginalSize()));
       setAlphabetSize(suffixSorter.getAlphabetSize());
 
-      // Populate alphabet
+      // Get alphabet
       alphabet = suffixSorter.getAlphabet();
 
       long timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
@@ -274,7 +273,7 @@ public class SuccinctBuffer extends SuccinctCore {
       int pos = 0;
       alphabetMap = new HashMap<>();
       alphabetMap.put(input[SA[0]], new Pair<>(0, pos));
-      columnoffsets = ThreadSafeIntBuffer.allocate(getAlphabetSize());
+      columnoffsets = ThreadSafeLongBuffer.allocate(getAlphabetSize());
       columnoffsets.put(pos, 0);
       pos++;
       for (int i = 1; i < getOriginalSize(); ++i) {
@@ -310,11 +309,12 @@ public class SuccinctBuffer extends SuccinctCore {
       // Compress NPA
       columns = new ThreadSafeByteBuffer[getAlphabetSize()];
       for (int i = 0; i < getAlphabetSize(); i++) {
-        int startOffset = columnoffsets.get(i);
-        int endOffset = (i < getAlphabetSize() - 1) ? columnoffsets.get(i + 1) : getOriginalSize();
+        int startOffset = (int) columnoffsets.get(i);
+        int endOffset =
+          (i < getAlphabetSize() - 1) ? (int) columnoffsets.get(i + 1) : getOriginalSize();
         int length = endOffset - startOffset;
         DeltaEncodedIntVector columnVector =
-          new DeltaEncodedIntVector(NPA, startOffset, length, DEFAULT_NPA_SAMPLING_RATE);
+          new DeltaEncodedIntVector(NPA, startOffset, length, getSamplingRateNPA());
         int columnSizeInBytes = columnVector.serializedSize();
         columns[i] = ThreadSafeByteBuffer.allocate(columnSizeInBytes);
         columnVector.writeToBuffer(columns[i].buffer());
@@ -330,17 +330,18 @@ public class SuccinctBuffer extends SuccinctCore {
 
       // Sample SA, ISA
       IntVector sampledSA, sampledISA;
-      int numSampledElements = CommonUtils.numBlocks(getOriginalSize(), getSamplingRate());
+      int numSampledElementsSA = CommonUtils.numBlocks(getOriginalSize(), getSamplingRateSA());
+      int numSampledElementsISA = CommonUtils.numBlocks(getOriginalSize(), getSamplingRateISA());
       int sampleBitWidth = BitUtils.bitWidth(getOriginalSize());
-      sampledSA = new IntVector(numSampledElements, sampleBitWidth);
-      sampledISA = new IntVector(numSampledElements, sampleBitWidth);
+      sampledSA = new IntVector(numSampledElementsSA, sampleBitWidth);
+      sampledISA = new IntVector(numSampledElementsISA, sampleBitWidth);
       for (int val = 0; val < getOriginalSize(); val++) {
         int idx = ISA[val];
-        if (idx % getSamplingRate() == 0) {
-          sampledSA.add(idx / getSamplingRate(), val);
+        if (idx % getSamplingRateSA() == 0) {
+          sampledSA.add(idx / getSamplingRateSA(), val);
         }
-        if (val % getSamplingRate() == 0) {
-          sampledISA.add(val / getSamplingRate(), idx);
+        if (val % getSamplingRateISA() == 0) {
+          sampledISA.add(val / getSamplingRateISA(), idx);
         }
       }
       sa = ThreadSafeLongBuffer.wrap(sampledSA.getData());
@@ -366,7 +367,9 @@ public class SuccinctBuffer extends SuccinctCore {
     WritableByteChannel dataChannel = Channels.newChannel(os);
 
     os.writeInt(getOriginalSize());
-    os.writeInt(getSamplingRate());
+    os.writeInt(getSamplingRateSA());
+    os.writeInt(getSamplingRateISA());
+    os.writeInt(getSamplingRateNPA());
     os.writeInt(getSampleBitWidth());
     os.writeInt(getAlphabetSize());
 
@@ -379,18 +382,19 @@ public class SuccinctBuffer extends SuccinctCore {
 
     os.write(alphabet);
 
-    ByteBuffer bufSA = ByteBuffer.allocate(sa.limit() * 8);
+    ByteBuffer bufSA = ByteBuffer.allocate(sa.limit() * SuccinctConstants.LONG_SIZE_BYTES);
     bufSA.asLongBuffer().put(sa.buffer());
     dataChannel.write(bufSA.order(ByteOrder.BIG_ENDIAN));
     sa.rewind();
 
-    ByteBuffer bufISA = ByteBuffer.allocate(isa.limit() * 8);
+    ByteBuffer bufISA = ByteBuffer.allocate(isa.limit() * SuccinctConstants.LONG_SIZE_BYTES);
     bufISA.asLongBuffer().put(isa.buffer());
     dataChannel.write(bufISA.order(ByteOrder.BIG_ENDIAN));
     isa.rewind();
 
-    ByteBuffer bufColOff = ByteBuffer.allocate(getAlphabetSize() * 4);
-    bufColOff.asIntBuffer().put(columnoffsets.buffer());
+    ByteBuffer bufColOff =
+      ByteBuffer.allocate(getAlphabetSize() * SuccinctConstants.LONG_SIZE_BYTES);
+    bufColOff.asLongBuffer().put(columnoffsets.buffer());
     dataChannel.write(bufColOff.order(ByteOrder.BIG_ENDIAN));
     columnoffsets.rewind();
 
@@ -410,7 +414,9 @@ public class SuccinctBuffer extends SuccinctCore {
   public void readFromStream(DataInputStream is) throws IOException {
     ReadableByteChannel dataChannel = Channels.newChannel(is);
     setOriginalSize(is.readInt());
-    setSamplingRate(is.readInt());
+    setSamplingRateSA(is.readInt());
+    setSamplingRateISA(is.readInt());
+    setSamplingRateNPA(is.readInt());
     setSampleBitWidth(is.readInt());
     setAlphabetSize(is.readInt());
 
@@ -429,27 +435,35 @@ public class SuccinctBuffer extends SuccinctCore {
     assert read == getAlphabetSize();
 
     // Compute number of sampled elements
-    int totalSampledBits =
-      CommonUtils.numBlocks(getOriginalSize(), getSamplingRate()) * getSampleBitWidth();
+    int totalSampledBitsSA =
+      CommonUtils.numBlocks(getOriginalSize(), getSamplingRateSA()) * getSampleBitWidth();
 
     // Read sa
-    ByteBuffer saBuf = ByteBuffer.allocate(BitUtils.bitsToBlocks64(totalSampledBits) * 8);
+    ByteBuffer saBuf = ByteBuffer
+      .allocate(BitUtils.bitsToBlocks64(totalSampledBitsSA) * SuccinctConstants.LONG_SIZE_BYTES);
     dataChannel.read(saBuf);
     saBuf.rewind();
     sa = ThreadSafeLongBuffer.fromLongBuffer(saBuf.asLongBuffer());
 
-    // Read sainv
-    ByteBuffer isaBuf = ByteBuffer.allocate(BitUtils.bitsToBlocks64(totalSampledBits) * 8);
+    // Compute number of sampled elements
+    int totalSampledBitsISA =
+      CommonUtils.numBlocks(getOriginalSize(), getSamplingRateISA()) * getSampleBitWidth();
+
+    // Read isa
+    ByteBuffer isaBuf = ByteBuffer
+      .allocate(BitUtils.bitsToBlocks64(totalSampledBitsISA) * SuccinctConstants.LONG_SIZE_BYTES);
     dataChannel.read(isaBuf);
     isaBuf.rewind();
     isa = ThreadSafeLongBuffer.fromLongBuffer(isaBuf.asLongBuffer());
 
     // Read columnoffsets
-    ByteBuffer coloffsetsBuf = ByteBuffer.allocate(getAlphabetSize() * 4);
+    ByteBuffer coloffsetsBuf =
+      ByteBuffer.allocate(getAlphabetSize() * SuccinctConstants.LONG_SIZE_BYTES);
     dataChannel.read(coloffsetsBuf);
     coloffsetsBuf.rewind();
-    columnoffsets = ThreadSafeIntBuffer.fromIntBuffer(coloffsetsBuf.asIntBuffer());
+    columnoffsets = ThreadSafeLongBuffer.fromLongBuffer(coloffsetsBuf.asLongBuffer());
 
+    // Read NPA columns
     columns = new ThreadSafeByteBuffer[getAlphabetSize()];
     for (int i = 0; i < getAlphabetSize(); i++) {
       int columnSize = is.readInt();
@@ -482,7 +496,9 @@ public class SuccinctBuffer extends SuccinctCore {
 
     // Deserialize metadata
     setOriginalSize(buf.getInt());
-    setSamplingRate(buf.getInt());
+    setSamplingRateSA(buf.getInt());
+    setSamplingRateISA(buf.getInt());
+    setSamplingRateNPA(buf.getInt());
     setSampleBitWidth(buf.getInt());
     setAlphabetSize(buf.getInt());
 
@@ -500,21 +516,25 @@ public class SuccinctBuffer extends SuccinctCore {
     buf.get(alphabet);
 
     // Compute number of sampled elements
-    int totalSampledBits =
-      CommonUtils.numBlocks(getOriginalSize(), getSamplingRate()) * getSampleBitWidth();
+    int totalSampledBitsSA =
+      CommonUtils.numBlocks(getOriginalSize(), getSamplingRateSA()) * getSampleBitWidth();
 
     // Read sa
-    int saSize = BitUtils.bitsToBlocks64(totalSampledBits) * 8;
+    int saSize = BitUtils.bitsToBlocks64(totalSampledBitsSA) * SuccinctConstants.LONG_SIZE_BYTES;
     sa = ThreadSafeLongBuffer.fromLongBuffer(sliceOrderLimit(buf, saSize).asLongBuffer());
 
+    // Compute number of sampled elements
+    int totalSampledBitsISA =
+      CommonUtils.numBlocks(getOriginalSize(), getSamplingRateISA()) * getSampleBitWidth();
+
     // Read isa
-    int isaSize = BitUtils.bitsToBlocks64(totalSampledBits) * 8;
+    int isaSize = BitUtils.bitsToBlocks64(totalSampledBitsISA) * SuccinctConstants.LONG_SIZE_BYTES;
     isa = ThreadSafeLongBuffer.fromLongBuffer(sliceOrderLimit(buf, isaSize).asLongBuffer());
 
     // Read columnoffsets
-    int coloffsetsSize = getAlphabetSize() * 4;
+    int coloffsetsSize = getAlphabetSize() * SuccinctConstants.LONG_SIZE_BYTES;
     columnoffsets =
-      ThreadSafeIntBuffer.fromIntBuffer(sliceOrderLimit(buf, coloffsetsSize).asIntBuffer());
+      ThreadSafeLongBuffer.fromLongBuffer(sliceOrderLimit(buf, coloffsetsSize).asLongBuffer());
 
     columns = new ThreadSafeByteBuffer[getAlphabetSize()];
     for (int i = 0; i < getAlphabetSize(); i++) {

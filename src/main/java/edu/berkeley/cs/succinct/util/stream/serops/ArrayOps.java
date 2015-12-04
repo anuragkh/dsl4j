@@ -1,19 +1,22 @@
-package edu.berkeley.cs.succinct.util.serops;
+package edu.berkeley.cs.succinct.util.stream.serops;
 
-import java.nio.IntBuffer;
+import edu.berkeley.cs.succinct.util.stream.LongArrayStream;
+
+import java.io.IOException;
 
 public class ArrayOps {
 
   /**
-   * Get rank1 value at specified index in serialized Integer array.
+   * Get rank1 value at specified index in serialized Long array.
    *
-   * @param arrayBuf Serialized Integer array.
+   * @param arrayBuf Serialized Long array.
    * @param startPos Start position.
    * @param size     Size of array.
    * @param i        Rank query.
    * @return Value of rank1 for query.
    */
-  public static int getRank1(IntBuffer arrayBuf, int startPos, int size, int i) {
+  public static int getRank1(LongArrayStream arrayBuf, int startPos, int size, long i)
+    throws IOException {
     int sp = 0, ep = size - 1;
     int m;
 

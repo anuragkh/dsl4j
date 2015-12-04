@@ -36,7 +36,9 @@ public abstract class SuccinctCore implements Serializable {
   // Metadata
   private transient int originalSize;
   private transient int alphabetSize;
-  private transient int samplingRate;
+  private transient int samplingRateSA;
+  private transient int samplingRateISA;
+  private transient int samplingRateNPA;
   private transient int sampleBitWidth;
 
   // Alphabet map
@@ -83,21 +85,57 @@ public abstract class SuccinctCore implements Serializable {
   }
 
   /**
-   * Get the sampling rate.
+   * Get the SA sampling rate.
    *
    * @return The samplingRate.
    */
-  public int getSamplingRate() {
-    return samplingRate;
+  public int getSamplingRateSA() {
+    return samplingRateSA;
   }
 
   /**
-   * Set the sampling rate.
+   * Set the SA sampling rate.
    *
    * @param samplingRate The samplingRate to set.
    */
-  public void setSamplingRate(int samplingRate) {
-    this.samplingRate = samplingRate;
+  public void setSamplingRateSA(int samplingRate) {
+    this.samplingRateSA = samplingRate;
+  }
+
+  /**
+   * Get the ISA sampling rate.
+   *
+   * @return The samplingRate.
+   */
+  public int getSamplingRateISA() {
+    return samplingRateISA;
+  }
+
+  /**
+   * Set the ISA sampling rate.
+   *
+   * @param samplingRate The samplingRate to set.
+   */
+  public void setSamplingRateISA(int samplingRate) {
+    this.samplingRateISA = samplingRate;
+  }
+
+  /**
+   * Get the NPA sampling rate.
+   *
+   * @return The samplingRate.
+   */
+  public int getSamplingRateNPA() {
+    return samplingRateNPA;
+  }
+
+  /**
+   * Set the NPA sampling rate.
+   *
+   * @param samplingRate The samplingRate to set.
+   */
+  public void setSamplingRateNPA(int samplingRate) {
+    this.samplingRateNPA = samplingRate;
   }
 
   /**

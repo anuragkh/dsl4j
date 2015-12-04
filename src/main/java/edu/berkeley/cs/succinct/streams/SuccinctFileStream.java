@@ -1,6 +1,5 @@
-package edu.berkeley.cs.succinct.buffers;
+package edu.berkeley.cs.succinct.streams;
 
-import edu.berkeley.cs.succinct.StorageMode;
 import edu.berkeley.cs.succinct.SuccinctCore;
 import edu.berkeley.cs.succinct.SuccinctFile;
 import edu.berkeley.cs.succinct.regex.RegExMatch;
@@ -8,49 +7,40 @@ import edu.berkeley.cs.succinct.regex.SuccinctRegEx;
 import edu.berkeley.cs.succinct.regex.parser.RegExParsingException;
 import edu.berkeley.cs.succinct.util.container.Range;
 import edu.berkeley.cs.succinct.util.iterator.SearchIterator;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 
 import java.io.ByteArrayOutputStream;
-import java.nio.ByteBuffer;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.Set;
 
-public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
+public class SuccinctFileStream extends SuccinctStream implements SuccinctFile {
 
-  private static final long serialVersionUID = 5879363803993345049L;
+  protected transient long endOfFileStream;
 
   /**
-   * Constructor to create SuccinctBuffer from byte array and file offset.
+   * Constructor to map a file containing Succinct data structures via stream.
    *
-   * @param input Input byte array.
+   * @param filePath Path of the file.
+   * @param conf     Configuration for the filesystem.
+   * @throws IOException
    */
-  public SuccinctFileBuffer(byte[] input) {
-    super(input);
+  public SuccinctFileStream(Path filePath, Configuration conf) throws IOException {
+    super(filePath, conf);
+    endOfFileStream = endOfCoreStream;
   }
 
   /**
-   * Constructor to load the data from persisted Succinct data-structures.
+   * Constructor to map a file containing Succinct data structures via stream
    *
-   * @param path        Path to load data from.
-   * @param storageMode Mode in which data is stored (In-memory or Memory-mapped)
+   * @param filePath Path of the file.
+   * @throws IOException
    */
-  public SuccinctFileBuffer(String path, StorageMode storageMode) {
-    super(path, storageMode);
-  }
-
-  /**
-   * Constructor to load the data from a ByteBuffer.
-   *
-   * @param buf Input buffer to load the data from
-   */
-  public SuccinctFileBuffer(ByteBuffer buf) {
-    super(buf);
-  }
-
-  /**
-   * Default constructor.
-   */
-  public SuccinctFileBuffer() {
-    super();
+  public SuccinctFileStream(Path filePath) throws IOException {
+    this(filePath, new Configuration());
   }
 
   /**
@@ -72,10 +62,10 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
   }
 
   /**
-   * Get the character at index in file.
+   * Get the character at specified index into succinct file
    *
-   * @param i Index into file.
-   * @return The character at the specified index.
+   * @param i Index into succinct file.
+   * @return The character at specified index.
    */
   @Override public char charAt(long i) {
     return (char) lookupC(lookupISA(i));
@@ -85,14 +75,13 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
    * Extract data of specified length from Succinct data structures at specified index.
    *
    * @param offset Index into original input to start extracting at.
-   * @param length Length of data to be extracted.
+   * @param len    Length of data to be extracted.
    * @return Extracted data.
    */
-  @Override public byte[] extract(long offset, int length) {
-
-    byte[] buf = new byte[length];
+  @Override public byte[] extract(long offset, int len) {
+    byte[] buf = new byte[len];
     long s = lookupISA(offset);
-    for (int k = 0; k < length && k < getOriginalSize(); k++) {
+    for (int k = 0; k < len && k < getOriginalSize(); k++) {
       buf[k] = lookupC(s);
       s = lookupNPA(s);
     }
@@ -108,9 +97,10 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
    * @return Extracted data.
    */
   @Override public byte[] extractUntil(long offset, byte delim) {
-
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    long s = lookupISA(offset);
+    long s;
+
+    s = lookupISA(offset);
     do {
       byte nextByte = lookupC(s);
       if (nextByte == delim || nextByte == SuccinctCore.EOF)
@@ -320,7 +310,7 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
    */
   @Override public Range continueFwdSearch(byte[] buf, Range range, int offset) {
 
-    if (buf.length == 0 || range.empty()) {
+    if (buf.length == 0) {
       return range;
     }
 
@@ -363,10 +353,10 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
   }
 
   /**
-   * Translate range into SA to offsets in file.
+   * Translate range into SA to recordIds in file.
    *
    * @param range Range into SA.
-   * @return Offsets corresponding to offsets.
+   * @return Offsets corresponding to recordIds.
    */
   @Override public Long[] rangeToOffsets(Range range) {
     if (range.empty()) {
@@ -396,14 +386,13 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
     return rangeToOffsets(bwdSearch(query));
   }
 
-
   /**
-   * Check if the two offsets belong to the same record. This is always true for the
+   * Check if the two recordIds belong to the same record. This is always true for the
    * SuccinctFileBuffer.
    *
    * @param firstOffset  The first offset.
    * @param secondOffset The second offset.
-   * @return True if the two offsets belong to the same record, false otherwise.
+   * @return True if the two recordIds belong to the same record, false otherwise.
    */
   @Override public boolean sameRecord(long firstOffset, long secondOffset) {
     return true;
@@ -418,5 +407,30 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
    */
   @Override public Set<RegExMatch> regexSearch(String query) throws RegExParsingException {
     return new SuccinctRegEx(this, query).compute();
+  }
+
+  /**
+   * Reads Succinct data structures from a DataInputStream.
+   *
+   * @param is Stream to read data structures from.
+   * @throws IOException
+   */
+  @Override public void readFromStream(DataInputStream is) throws IOException {
+    throw new UnsupportedOperationException("Cannot read SuccinctStream from another stream.");
+  }
+
+  /**
+   * Write Succinct data structures to a DataOutputStream.
+   *
+   * @param os Output stream to write data to.
+   * @throws IOException
+   */
+  @Override public void writeToStream(DataOutputStream os) throws IOException {
+    byte[] buffer = new byte[1024];
+    int len;
+    while ((len = originalStream.read(buffer)) != -1) {
+      os.write(buffer, 0, len);
+    }
+    originalStream.seek(0);
   }
 }

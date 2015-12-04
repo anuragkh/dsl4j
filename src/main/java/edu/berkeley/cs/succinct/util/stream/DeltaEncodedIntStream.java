@@ -1,28 +1,34 @@
-package edu.berkeley.cs.succinct.util.serops;
+package edu.berkeley.cs.succinct.util.stream;
 
 import edu.berkeley.cs.succinct.util.EliasGamma;
+import edu.berkeley.cs.succinct.util.SuccinctConstants;
+import edu.berkeley.cs.succinct.util.stream.serops.BitVectorOps;
+import edu.berkeley.cs.succinct.util.stream.serops.IntVectorOps;
+import org.apache.hadoop.fs.FSDataInputStream;
 
-import java.nio.ByteBuffer;
-import java.nio.LongBuffer;
+import java.io.IOException;
 
-/**
- * Operations on Serialized DeltaEncodedIntVector. Supports read-only operations. </p>
- *
- * The buffer passed in as argument to all operations is the ByteBuffer representation of the
- * DeltaEncodedIntVector.
- */
-public class DeltaEncodedIntVectorOps {
+public class DeltaEncodedIntStream {
+
+  private FSDataInputStream stream;
+  private long startPos;
+
+  public DeltaEncodedIntStream(FSDataInputStream stream, long startPos) throws IOException {
+    this.stream = stream;
+    this.startPos = startPos;
+  }
 
   /**
    * Compute the prefix-sum for the deltas starting at a specified offset (corresponding to a
    * particular sample) in the delta values for a specified number of delta values.
    *
-   * @param deltas The delta values represented as a LongBuffer.
+   * @param deltas      The delta values represented as a LongArrayStream.
    * @param deltaOffset The offset into the delta BitVector.
-   * @param untilIdx The index until which the prefix sum should be computed.
+   * @param untilIdx    The index until which the prefix sum should be computed.
    * @return The prefix-sum of delta values until the specified index.
    */
-  private static int prefixSum(LongBuffer deltas, int deltaOffset, int untilIdx) {
+  private static int prefixSum(LongArrayStream deltas, int deltaOffset, int untilIdx)
+    throws IOException {
     int deltaSum = 0;
     long deltaIdx = 0;
     long currentDeltaOffset = deltaOffset;
@@ -39,7 +45,8 @@ public class DeltaEncodedIntVectorOps {
           currentDeltaOffset++;
         }
         currentDeltaOffset++;
-        deltaSum += BitVectorOps.getValue(deltas, currentDeltaOffset, deltaWidth) + (1L << deltaWidth);
+        deltaSum +=
+          BitVectorOps.getValue(deltas, currentDeltaOffset, deltaWidth) + (1L << deltaWidth);
         currentDeltaOffset += deltaWidth;
         deltaIdx += 1;
       } else if (deltaIdx + cnt <= untilIdx) {
@@ -56,7 +63,8 @@ public class DeltaEncodedIntVectorOps {
             currentDeltaOffset++;
           }
           currentDeltaOffset++;
-          deltaSum += BitVectorOps.getValue(deltas, currentDeltaOffset, deltaWidth) + (1L << deltaWidth);
+          deltaSum +=
+            BitVectorOps.getValue(deltas, currentDeltaOffset, deltaWidth) + (1L << deltaWidth);
           currentDeltaOffset += deltaWidth;
           deltaIdx += 1;
         }
@@ -65,46 +73,44 @@ public class DeltaEncodedIntVectorOps {
     return deltaSum;
   }
 
-  /**
-   * Get the value at a specified index into the DeltaEncodedIntVector.
-   *
-   * @param vector DeltaEncodedIntVector represented as ByteBuffer.
-   * @param i Index into the DeltaEncodedIntVector.
-   * @return Value at the specified index.
-   */
-  public static int get(ByteBuffer vector, int i) {
+  public int get(int i) throws IOException {
+    stream.seek(startPos);
+
     // Read sampling rate
-    int samplingRate = vector.getInt();
+    int samplingRate = stream.readInt();
 
     // Read samples
-    int sampleBits = vector.getInt();
-    int sampleBlocks = vector.getInt();
-    LongBuffer samples = (LongBuffer) vector.slice().asLongBuffer().limit(sampleBlocks);
-    vector.position(vector.position() + sampleBlocks * 8);
+    int sampleBits = stream.readInt();
+    int sampleBlocks = stream.readInt();
+    long endOfSamples = stream.getPos() + sampleBlocks * SuccinctConstants.LONG_SIZE_BYTES;
+
+    LongArrayStream samples = new LongArrayStream(stream, stream.getPos(),
+      sampleBlocks * SuccinctConstants.LONG_SIZE_BYTES);
 
     int samplesIdx = i / samplingRate;
     int deltaOffsetsIdx = i % samplingRate;
     int val = IntVectorOps.get(samples, samplesIdx, sampleBits);
 
     if (deltaOffsetsIdx == 0) {
-      vector.rewind();
       return val;
     }
 
     // Read deltaOffsets
-    int deltaOffsetBits = vector.getInt();
-    int deltaOffsetBlocks = vector.getInt();
-    LongBuffer deltaOffsets = (LongBuffer) vector.slice().asLongBuffer().limit(deltaOffsetBlocks);
-    vector.position(vector.position() + deltaOffsetBlocks * 8);
+    stream.seek(endOfSamples);
+    int deltaOffsetBits = stream.readInt();
+    int deltaOffsetBlocks = stream.readInt();
+    long endOfDeltaOffsets =
+      stream.getPos() + deltaOffsetBlocks * SuccinctConstants.LONG_SIZE_BYTES;
+    LongArrayStream deltaOffsets = new LongArrayStream(stream, stream.getPos(),
+      deltaOffsetBlocks * SuccinctConstants.LONG_SIZE_BYTES);
+    int deltaOffset = IntVectorOps.get(deltaOffsets, samplesIdx, deltaOffsetBits);
 
     // Read deltas
-    int deltaBlocks = vector.getInt();
-    LongBuffer deltas = (LongBuffer) vector.slice().asLongBuffer().limit(deltaBlocks);
-
-    int deltaOffset = IntVectorOps.get(deltaOffsets, samplesIdx, deltaOffsetBits);
+    stream.seek(endOfDeltaOffsets);
+    int deltaBlocks = stream.readInt();
+    LongArrayStream deltas =
+      new LongArrayStream(stream, stream.getPos(), deltaBlocks * SuccinctConstants.LONG_SIZE_BYTES);
     val += prefixSum(deltas, deltaOffset, deltaOffsetsIdx);
-
-    vector.rewind();
 
     return val;
   }

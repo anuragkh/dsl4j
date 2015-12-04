@@ -20,7 +20,7 @@ public class ThreadSafeLongBuffer {
   }
 
   public static ThreadSafeLongBuffer allocate(int capacity) {
-    return new ThreadSafeLongBuffer(ByteBuffer.allocateDirect(capacity * 8).asLongBuffer());
+    return new ThreadSafeLongBuffer(ByteBuffer.allocate(capacity * 8).asLongBuffer());
   }
 
   public static ThreadSafeLongBuffer wrap(long[] array) {

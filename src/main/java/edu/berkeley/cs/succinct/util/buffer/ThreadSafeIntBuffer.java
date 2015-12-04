@@ -20,7 +20,7 @@ public class ThreadSafeIntBuffer {
   }
 
   public static ThreadSafeIntBuffer allocate(int capacity) {
-    return new ThreadSafeIntBuffer(ByteBuffer.allocateDirect(capacity * 4).asIntBuffer());
+    return new ThreadSafeIntBuffer(ByteBuffer.allocate(capacity * 4).asIntBuffer());
   }
 
   public static ThreadSafeIntBuffer wrap(int[] array) {
