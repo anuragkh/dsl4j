@@ -8,10 +8,10 @@ import edu.berkeley.cs.succinct.util.buffer.ThreadSafeByteBuffer;
 import edu.berkeley.cs.succinct.util.buffer.ThreadSafeIntBuffer;
 import edu.berkeley.cs.succinct.util.buffer.ThreadSafeLongBuffer;
 import edu.berkeley.cs.succinct.util.container.Pair;
-import edu.berkeley.cs.succinct.util.suffixarray.QSufSort;
 import edu.berkeley.cs.succinct.util.serops.ArrayOps;
 import edu.berkeley.cs.succinct.util.serops.DeltaEncodedIntVectorOps;
 import edu.berkeley.cs.succinct.util.serops.IntVectorOps;
+import edu.berkeley.cs.succinct.util.suffixarray.QSufSort;
 import edu.berkeley.cs.succinct.util.vector.DeltaEncodedIntVector;
 import edu.berkeley.cs.succinct.util.vector.IntVector;
 
@@ -27,17 +27,20 @@ import java.util.HashMap;
 
 public class SuccinctBuffer extends SuccinctCore {
 
+  // Default Sampling Rate
+  public static final int DEFAULT_SA_SAMPLING_RATE = 32;
+  public static final int DEFAULT_NPA_SAMPLING_RATE = 128;
+
   // To maintain versioning
   private static final long serialVersionUID = 1382615274437547247L;
 
   // Serialized data structures
-  protected transient ThreadSafeByteBuffer metadata;
-  protected transient ThreadSafeByteBuffer alphabetmap;
-  protected transient ThreadSafeByteBuffer alphabet;
   protected transient ThreadSafeLongBuffer sa;
   protected transient ThreadSafeLongBuffer isa;
   protected transient ThreadSafeIntBuffer columnoffsets;
   protected transient ThreadSafeByteBuffer[] columns;
+
+  // Storage mode
   protected transient StorageMode storageMode;
 
   /**
@@ -50,14 +53,9 @@ public class SuccinctBuffer extends SuccinctCore {
   /**
    * Constructor to initialize SuccinctCore from input byte array.
    *
-   * @param input      Input byte array.
+   * @param input Input byte array.
    */
   public SuccinctBuffer(byte[] input) {
-    // Append the EOF byte
-    int end = input.length;
-    input = Arrays.copyOf(input, input.length + 1);
-    input[end] = EOF;
-
     // Construct Succinct data-structures
     construct(input);
   }
@@ -121,8 +119,8 @@ public class SuccinctBuffer extends SuccinctCore {
     assert colId < getAlphabetSize();
     assert columnoffsets.get(colId) <= i;
 
-    return (long) DeltaEncodedIntVectorOps.get(columns[colId].buffer(),
-      (int) (i - columnoffsets.get(colId)));
+    return (long) DeltaEncodedIntVectorOps
+      .get(columns[colId].buffer(), (int) (i - columnoffsets.get(colId)));
   }
 
   /**
@@ -185,7 +183,7 @@ public class SuccinctBuffer extends SuccinctCore {
     }
 
     int idx = ArrayOps.getRank1(columnoffsets.buffer(), 0, getAlphabetSize(), (int) i) - 1;
-    return alphabet.get(idx);
+    return alphabet[idx];
   }
 
   /**
@@ -228,105 +226,134 @@ public class SuccinctBuffer extends SuccinctCore {
    */
   private void construct(byte[] input) {
 
-    QSufSort suffixSorter = new QSufSort();
-    suffixSorter.buildSuffixArray(input);
+    // Uncompressed ISA
+    int[] ISA;
 
-    // Get SA, ISA
-    int[] SA, ISA;
-    SA = suffixSorter.getSA();
-    ISA = suffixSorter.getISA();
+    logger.info("Constructing Succinct data structures.");
+    long startTimeGlobal = System.currentTimeMillis();
 
-    System.out.println("Constructed SA, ISA");
+    {
+      long startTime = System.currentTimeMillis();
 
-    // Set metadata
-    setOriginalSize(input.length);
-    setSamplingRate(32);                // FIXME: Hard-coded
-    setSampleBitWidth(BitUtils.bitWidth(getOriginalSize()));
-    setAlphabetSize(suffixSorter.getAlphabetSize());
-    metadata = ThreadSafeByteBuffer.allocate(16);
-    metadata.putInt(getOriginalSize());
-    metadata.putInt(getSamplingRate());
-    metadata.putInt(getSampleBitWidth());
-    metadata.putInt(getAlphabetSize());
-    metadata.rewind();
+      // Append the EOF byte
+      int end = input.length;
+      input = Arrays.copyOf(input, input.length + 1);
+      input[end] = EOF;
 
-    // Populate alphabet
-    alphabet = ThreadSafeByteBuffer.wrap(suffixSorter.getAlphabet());
-    alphabet.rewind();
+      long timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
+      logger.info("Cleaned input in " + timeTaken + "s.");
+    }
 
-    // Populate columnoffsets and alphabetMap
-    int pos = 0;
-    alphabetMap = new HashMap<>();
-    alphabetMap.put(input[SA[0]], new Pair<>(0, pos));
-    columnoffsets = ThreadSafeIntBuffer.allocate(getAlphabetSize());
-    columnoffsets.put(pos, 0);
-    pos++;
-    for (int i = 1; i < getOriginalSize(); ++i) {
-      if (input[SA[i]] != input[SA[i - 1]]) {
-        alphabetMap.put(input[SA[i]], new Pair<>(i, pos));
-        columnoffsets.put(pos, i);
-        pos++;
+
+    // Scope of SA, input
+    {
+      long startTime = System.currentTimeMillis();
+
+      // Build SA, ISA
+      QSufSort suffixSorter = new QSufSort();
+      suffixSorter.buildSuffixArray(input);
+
+      int[] SA = suffixSorter.getSA();
+      ISA = suffixSorter.getISA();
+
+      // Set metadata
+      setOriginalSize(input.length);
+      setSamplingRate(DEFAULT_SA_SAMPLING_RATE);
+      setSampleBitWidth(BitUtils.bitWidth(getOriginalSize()));
+      setAlphabetSize(suffixSorter.getAlphabetSize());
+
+      // Populate alphabet
+      alphabet = suffixSorter.getAlphabet();
+
+      long timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
+      logger.info("Built SA, ISA and set metadata in " + timeTaken + "s.");
+
+      startTime = System.currentTimeMillis();
+
+      // Populate column offsets and alphabetMap
+      int pos = 0;
+      alphabetMap = new HashMap<>();
+      alphabetMap.put(input[SA[0]], new Pair<>(0, pos));
+      columnoffsets = ThreadSafeIntBuffer.allocate(getAlphabetSize());
+      columnoffsets.put(pos, 0);
+      pos++;
+      for (int i = 1; i < getOriginalSize(); ++i) {
+        if (input[SA[i]] != input[SA[i - 1]]) {
+          alphabetMap.put(input[SA[i]], new Pair<>(i, pos));
+          columnoffsets.put(pos, i);
+          pos++;
+        }
       }
-    }
-    alphabetMap.put(SuccinctCore.EOA, new Pair<>(getOriginalSize(), getAlphabetSize()));
-    columnoffsets.rewind();
+      alphabetMap.put(SuccinctCore.EOA, new Pair<>(getOriginalSize(), getAlphabetSize()));
+      columnoffsets.rewind();
 
-    // Serialize alphabetmap
-    alphabetmap = ThreadSafeByteBuffer.allocate(alphabetMap.size() * (1 + 4 + 4));
-    for (Byte c : alphabetMap.keySet()) {
-      Pair<Integer, Integer> cval = alphabetMap.get(c);
-      alphabetmap.put(c);
-      alphabetmap.putInt(cval.first);
-      alphabetmap.putInt(cval.second);
-    }
-    alphabetmap.rewind();
-
-    System.out.println("Computed Alphabet, AlphabetMap, ColumnOffsets");
-
-    // Construct NPA
-    int[] NPA = new int[getOriginalSize()];
-    for (int i = 1; i < getOriginalSize(); i++) {
-      NPA[ISA[i - 1]] = ISA[i];
-    }
-    NPA[ISA[getOriginalSize() - 1]] = ISA[0];
-
-    System.out.println("Computed uncompressed NPA");
-
-    columns = new ThreadSafeByteBuffer[getAlphabetSize()];
-    for (int i = 0; i < getAlphabetSize(); i++) {
-      int startOffset = columnoffsets.get(i);
-      int endOffset = (i < getAlphabetSize() - 1) ? columnoffsets.get(i + 1) : getOriginalSize();
-      int length = endOffset - startOffset;
-      DeltaEncodedIntVector columnVector = new DeltaEncodedIntVector(NPA, startOffset, length, 128);
-      int columnSizeInBytes = columnVector.serializedSize();
-      columns[i] = ThreadSafeByteBuffer.allocate(columnSizeInBytes);
-      columnVector.writeToBuffer(columns[i].buffer());
-      columns[i].rewind();
+      timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
+      logger.info("Computed alphabet map and column offsets in " + timeTaken + "s.");
     }
 
-    System.out.println("Constructed compressed NPA");
+    // Scope of NPA
+    {
+      long startTime = System.currentTimeMillis();
 
-    // Sample SA, ISA
-    IntVector sampledSA, sampledISA;
-    int numSampledElements = CommonUtils.numBlocks(getOriginalSize(), getSamplingRate());
-    int sampleBitWidth = BitUtils.bitWidth(getOriginalSize());
-    sampledSA = new IntVector(numSampledElements, sampleBitWidth);
-    sampledISA = new IntVector(numSampledElements, sampleBitWidth);
-    for (int i = 0; i < getOriginalSize(); i++) {
-      int saVal = SA[i];
-      if (i % getSamplingRate() == 0) {
-        sampledSA.add(i / getSamplingRate(), saVal);
+      // Construct NPA
+      int[] NPA = new int[getOriginalSize()];
+      for (int i = 1; i < getOriginalSize(); i++) {
+        NPA[ISA[i - 1]] = ISA[i];
       }
-      if (saVal % getSamplingRate() == 0) {
-        sampledISA.add(saVal / getSamplingRate(), i);
-      }
-    }
-    sa = ThreadSafeLongBuffer.wrap(sampledSA.getData());
-    sa.rewind();
-    isa = ThreadSafeLongBuffer.wrap(sampledISA.getData());
-    isa.rewind();
+      NPA[ISA[getOriginalSize() - 1]] = ISA[0];
 
-    System.out.println("Constructed sampled SA, ISA");
+      long timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
+      logger.info("Built uncompressed NPA in " + timeTaken + "s.");
+
+      startTime = System.currentTimeMillis();
+
+      // Compress NPA
+      columns = new ThreadSafeByteBuffer[getAlphabetSize()];
+      for (int i = 0; i < getAlphabetSize(); i++) {
+        int startOffset = columnoffsets.get(i);
+        int endOffset = (i < getAlphabetSize() - 1) ? columnoffsets.get(i + 1) : getOriginalSize();
+        int length = endOffset - startOffset;
+        DeltaEncodedIntVector columnVector =
+          new DeltaEncodedIntVector(NPA, startOffset, length, DEFAULT_NPA_SAMPLING_RATE);
+        int columnSizeInBytes = columnVector.serializedSize();
+        columns[i] = ThreadSafeByteBuffer.allocate(columnSizeInBytes);
+        columnVector.writeToBuffer(columns[i].buffer());
+        columns[i].rewind();
+      }
+
+      timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
+      logger.info("Compressed NPA in " + timeTaken + "s.");
+    }
+
+    {
+      long startTime = System.currentTimeMillis();
+
+      // Sample SA, ISA
+      IntVector sampledSA, sampledISA;
+      int numSampledElements = CommonUtils.numBlocks(getOriginalSize(), getSamplingRate());
+      int sampleBitWidth = BitUtils.bitWidth(getOriginalSize());
+      sampledSA = new IntVector(numSampledElements, sampleBitWidth);
+      sampledISA = new IntVector(numSampledElements, sampleBitWidth);
+      for (int val = 0; val < getOriginalSize(); val++) {
+        int idx = ISA[val];
+        if (idx % getSamplingRate() == 0) {
+          sampledSA.add(idx / getSamplingRate(), val);
+        }
+        if (val % getSamplingRate() == 0) {
+          sampledISA.add(val / getSamplingRate(), idx);
+        }
+      }
+      sa = ThreadSafeLongBuffer.wrap(sampledSA.getData());
+      sa.rewind();
+      isa = ThreadSafeLongBuffer.wrap(sampledISA.getData());
+      isa.rewind();
+
+      long timeTaken = (System.currentTimeMillis() - startTime) / 1000L;
+      logger.info("Sampled SA, ISA in " + timeTaken + "s.");
+    }
+
+    long timeTakenGlobal = (System.currentTimeMillis() - startTimeGlobal) / 1000L;
+    logger.info("Finished constructing Succinct data structures in " + timeTakenGlobal + "s.");
   }
 
   /**
@@ -338,14 +365,19 @@ public class SuccinctBuffer extends SuccinctCore {
   public void writeToStream(DataOutputStream os) throws IOException {
     WritableByteChannel dataChannel = Channels.newChannel(os);
 
-    dataChannel.write(metadata.order(ByteOrder.BIG_ENDIAN));
-    metadata.rewind();
+    os.writeInt(getOriginalSize());
+    os.writeInt(getSamplingRate());
+    os.writeInt(getSampleBitWidth());
+    os.writeInt(getAlphabetSize());
 
-    dataChannel.write(alphabetmap.order(ByteOrder.BIG_ENDIAN));
-    alphabetmap.rewind();
+    for (Byte c : alphabetMap.keySet()) {
+      Pair<Integer, Integer> cval = alphabetMap.get(c);
+      os.write(c);
+      os.writeInt(cval.first);
+      os.writeInt(cval.second);
+    }
 
-    dataChannel.write(alphabet.order(ByteOrder.BIG_ENDIAN));
-    alphabet.rewind();
+    os.write(alphabet);
 
     ByteBuffer bufSA = ByteBuffer.allocate(sa.limit() * 8);
     bufSA.asLongBuffer().put(sa.buffer());
@@ -382,33 +414,23 @@ public class SuccinctBuffer extends SuccinctCore {
     setSampleBitWidth(is.readInt());
     setAlphabetSize(is.readInt());
 
-    metadata = ThreadSafeByteBuffer.allocate(16);
-    metadata.putInt(getOriginalSize());
-    metadata.putInt(getSamplingRate());
-    metadata.putInt(getSampleBitWidth());
-    metadata.putInt(getAlphabetSize());
-    metadata.rewind();
-
-    alphabetmap = ThreadSafeByteBuffer.allocate((getAlphabetSize() + 1) * (1 + 4 + 4));
-    dataChannel.read(alphabetmap.buffer());
-    alphabetmap.rewind();
-
     // Deserialize alphabetmap
     alphabetMap = new HashMap<>();
     for (int i = 0; i < getAlphabetSize() + 1; i++) {
-      byte c = alphabetmap.get();
-      int v1 = alphabetmap.getInt();
-      int v2 = alphabetmap.getInt();
+      byte c = is.readByte();
+      int v1 = is.readInt();
+      int v2 = is.readInt();
       alphabetMap.put(c, new Pair<>(v1, v2));
     }
 
     // Read alphabet
-    alphabet = ThreadSafeByteBuffer.allocate(getAlphabetSize());
-    dataChannel.read(alphabet.buffer());
-    alphabet.rewind();
+    alphabet = new byte[getAlphabetSize()];
+    int read = is.read(alphabet);
+    assert read == getAlphabetSize();
 
     // Compute number of sampled elements
-    int totalSampledBits = CommonUtils.numBlocks(getOriginalSize(), getSamplingRate()) * getSampleBitWidth();
+    int totalSampledBits =
+      CommonUtils.numBlocks(getOriginalSize(), getSamplingRate()) * getSampleBitWidth();
 
     // Read sa
     ByteBuffer saBuf = ByteBuffer.allocate(BitUtils.bitsToBlocks64(totalSampledBits) * 8);
@@ -458,33 +480,28 @@ public class SuccinctBuffer extends SuccinctCore {
   public void mapFromBuffer(ByteBuffer buf) {
     buf.rewind();
 
-    metadata = ThreadSafeByteBuffer.fromByteBuffer(sliceOrderLimit(buf, 16));
-
     // Deserialize metadata
-    setOriginalSize(metadata.getInt());
-    setSamplingRate(metadata.getInt());
-    setSampleBitWidth(metadata.getInt());
-    setAlphabetSize(metadata.getInt());
-    metadata.rewind();
+    setOriginalSize(buf.getInt());
+    setSamplingRate(buf.getInt());
+    setSampleBitWidth(buf.getInt());
+    setAlphabetSize(buf.getInt());
 
-    int alphabetmapSize = (getAlphabetSize() + 1) * (1 + 4 + 4);
-    alphabetmap = ThreadSafeByteBuffer.fromByteBuffer(sliceOrderLimit(buf, alphabetmapSize));
-
-    // Deserialize alphabetmap
+    // Deserialize alphabet map
     alphabetMap = new HashMap<>();
     for (int i = 0; i < getAlphabetSize() + 1; i++) {
-      byte c = alphabetmap.get();
-      int v1 = alphabetmap.getInt();
-      int v2 = alphabetmap.getInt();
+      byte c = buf.get();
+      int v1 = buf.getInt();
+      int v2 = buf.getInt();
       alphabetMap.put(c, new Pair<>(v1, v2));
     }
-    alphabetmap.rewind();
 
     // Read alphabet
-    alphabet = ThreadSafeByteBuffer.fromByteBuffer(sliceOrderLimit(buf, getAlphabetSize()));
+    alphabet = new byte[getAlphabetSize()];
+    buf.get(alphabet);
 
     // Compute number of sampled elements
-    int totalSampledBits = CommonUtils.numBlocks(getOriginalSize(), getSamplingRate()) * getSampleBitWidth();
+    int totalSampledBits =
+      CommonUtils.numBlocks(getOriginalSize(), getSamplingRate()) * getSampleBitWidth();
 
     // Read sa
     int saSize = BitUtils.bitsToBlocks64(totalSampledBits) * 8;
@@ -496,7 +513,8 @@ public class SuccinctBuffer extends SuccinctCore {
 
     // Read columnoffsets
     int coloffsetsSize = getAlphabetSize() * 4;
-    columnoffsets = ThreadSafeIntBuffer.fromIntBuffer(sliceOrderLimit(buf, coloffsetsSize).asIntBuffer());
+    columnoffsets =
+      ThreadSafeIntBuffer.fromIntBuffer(sliceOrderLimit(buf, coloffsetsSize).asIntBuffer());
 
     columns = new ThreadSafeByteBuffer[getAlphabetSize()];
     for (int i = 0; i < getAlphabetSize(); i++) {
@@ -543,29 +561,6 @@ public class SuccinctBuffer extends SuccinctCore {
 
     ByteBuffer buf = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, size);
     mapFromBuffer(buf);
-  }
-
-  /**
-   * Convert Succinct data-structures to a byte array.
-   *
-   * @return Byte array containing serialzied Succinct data structures.
-   * @throws IOException
-   */
-  public byte[] toByteArray() throws IOException {
-    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-    writeToStream(new DataOutputStream(bos));
-    return bos.toByteArray();
-  }
-
-  /**
-   * Read Succinct data structures from byte array.
-   *
-   * @param data Byte array to read data from.
-   * @throws IOException
-   */
-  public void fromByteArray(byte[] data) throws IOException {
-    ByteArrayInputStream bis = new ByteArrayInputStream(data);
-    readFromStream(new DataInputStream(bis));
   }
 
   /**

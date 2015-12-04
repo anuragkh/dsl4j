@@ -61,10 +61,7 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
    * @return The alphabet for the succinct file.
    */
   @Override public byte[] getAlphabet() {
-    byte[] alphabetBuf = new byte[getAlphabetSize()];
-    alphabet.buffer().get(alphabetBuf);
-    alphabet.rewind();
-    return alphabetBuf;
+    return alphabet;
   }
 
   /**
@@ -152,7 +149,7 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
     if (alphabetMap.containsKey(buf[m - 1])) {
       range.first = alphabetMap.get(buf[m - 1]).first;
       byte nextByte = alphabetMap.get(buf[m - 1]).second + 1 == getAlphabetSize() ? SuccinctCore.EOA :
-        alphabet.get(alphabetMap.get(buf[m - 1]).second + 1);
+        alphabet[alphabetMap.get(buf[m - 1]).second + 1];
       range.second = alphabetMap.get(nextByte).first - 1;
     } else {
       return new Range(0L, -1L);
@@ -162,7 +159,7 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
       if (alphabetMap.containsKey(buf[i])) {
         c1 = alphabetMap.get(buf[i]).first;
         byte nextByte = alphabetMap.get(buf[i]).second + 1 == getAlphabetSize() ? SuccinctCore.EOA :
-          alphabet.get(alphabetMap.get(buf[i]).second + 1);
+          alphabet[alphabetMap.get(buf[i]).second + 1];
         c2 = alphabetMap.get(nextByte).first - 1;
       } else {
         return new Range(0L, -1L);
@@ -203,7 +200,7 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
       if (alphabetMap.containsKey(buf[i])) {
         c1 = alphabetMap.get(buf[i]).first;
         byte nextByte = alphabetMap.get(buf[i]).second + 1 == getAlphabetSize() ? SuccinctCore.EOA :
-          alphabet.get(alphabetMap.get(buf[i]).second + 1);
+          alphabet[alphabetMap.get(buf[i]).second + 1];
         c2 = alphabetMap.get(nextByte).first - 1;
       } else {
         return new Range(0L, -1L);
@@ -422,7 +419,7 @@ public class SuccinctFileBuffer extends SuccinctBuffer implements SuccinctFile {
     SuccinctRegEx succinctRegEx = new SuccinctRegEx(this, query);
 
     Set<RegExMatch> chunkResults = succinctRegEx.compute();
-    Map<Long, Integer> results = new TreeMap<Long, Integer>();
+    Map<Long, Integer> results = new TreeMap<>();
     for (RegExMatch result : chunkResults) {
       results.put(result.getOffset(), result.getLength());
     }

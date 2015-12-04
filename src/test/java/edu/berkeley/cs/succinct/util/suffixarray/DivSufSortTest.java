@@ -37,7 +37,8 @@ public class DivSufSortTest extends TestCase {
   }
 
   public void testBuildSuffixArray() throws Exception {
-    int[] SA = instance.buildSuffixArray(data, 0, data.length);
+    instance.buildSuffixArray(data);
+    int[] SA = instance.getSA();
 
     long sum = 0;
     DataInputStream dIS = new DataInputStream(new FileInputStream(new File(testFileSA)));

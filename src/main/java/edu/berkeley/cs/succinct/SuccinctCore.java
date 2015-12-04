@@ -3,10 +3,26 @@ package edu.berkeley.cs.succinct;
 import edu.berkeley.cs.succinct.util.container.Pair;
 
 import java.io.Serializable;
+import java.util.Date;
 import java.util.HashMap;
-import java.util.Map;
+import java.util.logging.*;
 
 public abstract class SuccinctCore implements Serializable {
+
+  // Logger
+  public final static Logger logger = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+  static {
+    final Handler consoleHandler = new ConsoleHandler();
+    consoleHandler.setFormatter(new Formatter() {
+      public String format(LogRecord record) {
+        return "[" + record.getLevel() + "] " + new Date(record.getMillis()) + " " + record
+          .getMessage() + "\n";
+      }
+    });
+    logger.setUseParentHandlers(false);
+    logger.addHandler(consoleHandler);
+    logger.setLevel(Level.OFF);
+  }
 
   // End of File marker
   public transient static final byte EOF = -127;
@@ -17,15 +33,15 @@ public abstract class SuccinctCore implements Serializable {
   // End of Line marker
   public transient static final byte EOL = '\n';
 
-  // Deserialized data-structures
-  protected transient HashMap<Byte, Pair<Integer, Integer>> alphabetMap;
-  protected transient Map<Long, Long> contextMap;
-
   // Metadata
   private transient int originalSize;
   private transient int alphabetSize;
   private transient int samplingRate;
   private transient int sampleBitWidth;
+
+  // Alphabet map
+  protected transient HashMap<Byte, Pair<Integer, Integer>> alphabetMap;
+  protected transient byte[] alphabet;
 
   public SuccinctCore() {
   }

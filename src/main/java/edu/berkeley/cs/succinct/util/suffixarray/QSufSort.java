@@ -35,7 +35,7 @@ public final class QSufSort {
    *
    * @param input Input byte array.
    */
-  public final void buildSuffixArray(byte[] input) {
+  public void buildSuffixArray(byte[] input) {
     int max = input[0];
     int min = max;
 

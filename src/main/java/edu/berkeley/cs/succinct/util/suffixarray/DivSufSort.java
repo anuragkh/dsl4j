@@ -12,7 +12,7 @@ package edu.berkeley.cs.succinct.util.suffixarray;
  * <tt>libdivsufsort-2.0.0, http://code.google.com/p/libdivsufsort/</tt>
  * <p/>
  * The implementation of this algorithm makes some assumptions about the input. See
- * {@link #buildSuffixArray(byte[], int, int)} for details.
+ * {@link #buildSuffixArray(byte[])} for details.
  */
 public final class DivSufSort {
   /*
@@ -80,12 +80,6 @@ public final class DivSufSort {
     }
   }
 
-  public DivSufSort() {
-    ALPHABET_SIZE = DEFAULT_ALPHABET_SIZE;
-    BUCKET_A_SIZE = ALPHABET_SIZE;
-    BUCKET_B_SIZE = ALPHABET_SIZE * ALPHABET_SIZE;
-  }
-
   /**
    * @param alphabetSize The size of the input alphabet.
    */
@@ -93,6 +87,10 @@ public final class DivSufSort {
     ALPHABET_SIZE = alphabetSize;
     BUCKET_A_SIZE = ALPHABET_SIZE;
     BUCKET_B_SIZE = ALPHABET_SIZE * ALPHABET_SIZE;
+  }
+
+  public DivSufSort() {
+    this(DEFAULT_ALPHABET_SIZE);
   }
 
     /* constants */
@@ -138,33 +136,22 @@ public final class DivSufSort {
   private final int BUCKET_B_SIZE;
   private int[] SA;
   private byte[] T;
-  private int start;
 
-  /**
-   * {@inheritDoc}
-   * <p/>
-   * Additional constraints enforced by DivSufSort algorithm:
-   * <ul>
-   * <li>non-negative (&ge;0) symbols in the input</li>
-   * <li>symbols limited by alphabet size passed in the constructor.</li>
-   * <li>length >= 2</li>
-   * </ul>
-   * <p/>
-   */
-  public final int[] buildSuffixArray(byte[] input, int start, int length) {
+  public final void buildSuffixArray(byte[] input) {
     assert input != null;
-    assert length >= 2;
+    assert input.length >= 2;
 
-    final int[] ret = new int[length];
-    this.SA = ret;
+    this.SA = new int[input.length];
     this.T = input;
     int[] bucket_A = new int[BUCKET_A_SIZE];
     int[] bucket_B = new int[BUCKET_B_SIZE];
-    this.start = start;
-        /* Suffixsort. */
-    int m = sortTypeBstar(bucket_A, bucket_B, length);
-    constructSuffixArray(bucket_A, bucket_B, length, m);
-    return ret;
+    /* Suffix sort. */
+    int m = sortTypeBstar(bucket_A, bucket_B, input.length);
+    constructSuffixArray(bucket_A, bucket_B, input.length, m);
+  }
+
+  public int[] getSA() {
+    return SA;
   }
 
   /**
@@ -191,8 +178,8 @@ public final class DivSufSort {
             // "");
             // Tools.assertAlways(T[s - 1] <= T[s], "");
             SA[j] = ~s;
-            c0 = T[start + --s];
-            if ((0 < s) && (T[start + s - 1] > c0)) {
+            c0 = T[--s];
+            if ((0 < s) && (T[s - 1] > c0)) {
               s = ~s;
             }
             if (c0 != c2) {
@@ -215,14 +202,14 @@ public final class DivSufSort {
     /*
      * Construct the suffix array by using the sorted order of type B suffixes.
      */
-    k = bucket_A[c2 = T[start + n - 1]];
-    SA[k++] = (T[start + n - 2] < c2) ? ~(n - 1) : (n - 1);
+    k = bucket_A[c2 = T[n - 1]];
+    SA[k++] = (T[n - 2] < c2) ? ~(n - 1) : (n - 1);
     /* Scan the suffix array from left to right. */
     for (i = 0, j = n; i < j; ++i) {
       if (0 < (s = SA[i])) {
         // Tools.assertAlways(T[s - 1] >= T[s], "");
-        c0 = T[start + --s];
-        if ((s == 0) || (T[start + s - 1] < c0)) {
+        c0 = T[--s];
+        if ((s == 0) || (T[s - 1] < c0)) {
           s = ~s;
         }
         if (c0 != c2) {
@@ -245,24 +232,24 @@ public final class DivSufSort {
     int PAb, ISAb, buf;
 
     int i, j, k, t, m, bufsize;
-    int c0, c1 = 0;
+    int c0, c1;
 
     /*
      * Count the number of occurrences of the first one or two characters of each type
      * A, B and B suffix. Moreover, store the beginning position of all type B
      * suffixes into the array SA.
      */
-    for (i = n - 1, m = n, c0 = T[start + n - 1]; 0 <= i; ) {
+    for (i = n - 1, m = n, c0 = T[n - 1]; 0 <= i; ) {
             /* type A suffix. */
       do {
         ++bucket_A[c1 = c0];
-      } while ((0 <= --i) && ((c0 = T[start + i]) >= c1));
+      } while ((0 <= --i) && ((c0 = T[i]) >= c1));
       if (0 <= i) {
                 /* type B suffix. */
         ++bucket_B[(c0) * ALPHABET_SIZE + (c1)];
         SA[--m] = i;
                 /* type B suffix. */
-        for (--i, c1 = c0; (0 <= i) && ((c0 = T[start + i]) <= c1); --i, c1 = c0) {
+        for (--i, c1 = c0; (0 <= i) && ((c0 = T[i]) <= c1); --i, c1 = c0) {
           ++bucket_B[(c1) * ALPHABET_SIZE + (c0)];
         }
       }
@@ -292,13 +279,13 @@ public final class DivSufSort {
       ISAb = m;// SA
       for (i = m - 2; 0 <= i; --i) {
         t = SA[PAb + i];
-        c0 = T[start + t];
-        c1 = T[start + t + 1];
+        c0 = T[t];
+        c1 = T[t + 1];
         SA[--bucket_B[(c0) * ALPHABET_SIZE + (c1)]] = i;
       }
       t = SA[PAb + m - 1];
-      c0 = T[start + t];
-      c1 = T[start + t + 1];
+      c0 = T[t];
+      c1 = T[t + 1];
       SA[--bucket_B[(c0) * ALPHABET_SIZE + (c1)]] = m - 1;
 
       // Sort the type B* substrings using sssort.
@@ -337,12 +324,12 @@ public final class DivSufSort {
       // trsort.
       trSort(ISAb, m, 1);
       // Set the sorted order of type B* suffixes.
-      for (i = n - 1, j = m, c0 = T[start + n - 1]; 0 <= i; ) {
-        for (--i, c1 = c0; (0 <= i) && ((c0 = T[start + i]) >= c1); --i, c1 = c0) {
+      for (i = n - 1, j = m, c0 = T[n - 1]; 0 <= i; ) {
+        for (--i, c1 = c0; (0 <= i) && ((c0 = T[i]) >= c1); --i, c1 = c0) {
         }
         if (0 <= i) {
           t = i;
-          for (--i, c1 = c0; (0 <= i) && ((c0 = T[start + i]) <= c1); --i, c1 = c0) {
+          for (--i, c1 = c0; (0 <= i) && ((c0 = T[i]) <= c1); --i, c1 = c0) {
           }
           SA[SA[ISAb + --j]] = ((t == 0) || (1 < (t - i))) ? t : ~t;
         }
@@ -443,10 +430,10 @@ public final class DivSufSort {
 
     for (
       U1 = depth + pa, U2 = depth + SA[p2], U1n = pb + 2, U2n = SA[p2 + 1] + 2;
-      (U1 < U1n) && (U2 < U2n) && (T[start + U1] == T[start + U2]); ++U1, ++U2) {
+      (U1 < U1n) && (U2 < U2n) && (T[U1] == T[U2]); ++U1, ++U2) {
     }
 
-    return U1 < U1n ? (U2 < U2n ? T[start + U1] - T[start + U2] : 1) : (U2 < U2n ? -1 : 0);
+    return U1 < U1n ? (U2 < U2n ? T[U1] - T[U2] : 1) : (U2 < U2n ? -1 : 0);
   }
 
   /**
@@ -457,10 +444,10 @@ public final class DivSufSort {
 
     for (
       U1 = depth + SA[p1], U2 = depth + SA[p2], U1n = SA[p1 + 1] + 2, U2n = SA[p2 + 1] + 2;
-      (U1 < U1n) && (U2 < U2n) && (T[start + U1] == T[start + U2]); ++U1, ++U2) {
+      (U1 < U1n) && (U2 < U2n) && (T[U1] == T[U2]); ++U1, ++U2) {
     }
 
-    return U1 < U1n ? (U2 < U2n ? T[start + U1] - T[start + U2] : 1) : (U2 < U2n ? -1 : 0);
+    return U1 < U1n ? (U2 < U2n ? T[U1] - T[U2] : 1) : (U2 < U2n ? -1 : 0);
 
   }
 
@@ -960,7 +947,7 @@ public final class DivSufSort {
       (((x & 0xff000000) != 0) ?
         24 + lg_table[(x >> 24) & 0xff] :
         16 + lg_table[(x >> 16) & 0xff]) :
-      (((x & 0x0000ff00) != 0) ? 8 + lg_table[(x >> 8) & 0xff] : 0 + lg_table[(x >> 0) & 0xff]);
+      (x & 0x0000ff00) != 0 ? 8 + lg_table[x >> 8 & 0xff] : lg_table[x & 0xff];
 
     if (e >= 16) {
       y = sqq_table[x >> ((e - 6) - (e & 1))] << ((e >> 1) - 7);
@@ -978,7 +965,7 @@ public final class DivSufSort {
   }
 
   /* Multikey introsort for medium size groups. */
-  private final void ssMintroSort(int PA, int first, int last, int depth) {
+  private void ssMintroSort(int PA, int first, int last, int depth) {
     final int STACK_SIZE = SS_MISORT_STACKSIZE;
     StackElement[] stack = new StackElement[STACK_SIZE];
     int Td;// T ptr
@@ -1012,8 +999,8 @@ public final class DivSufSort {
 
       }
       if (limit < 0) {
-        for (a = first + 1, v = T[start + Td + SA[PA + SA[first]]]; a < last; ++a) {
-          if ((x = T[start + Td + SA[PA + SA[a]]]) != v) {
+        for (a = first + 1, v = T[Td + SA[PA + SA[first]]]; a < last; ++a) {
+          if ((x = T[Td + SA[PA + SA[a]]]) != v) {
             if (1 < (a - first)) {
               break;
             }
@@ -1022,7 +1009,7 @@ public final class DivSufSort {
           }
         }
 
-        if (T[start + Td + SA[PA + SA[first]] - 1] < v) {
+        if (T[Td + SA[PA + SA[first]] - 1] < v) {
           first = ssPartition(PA, first, a, depth);
         }
         if ((a - first) <= (last - a)) {
@@ -1051,14 +1038,14 @@ public final class DivSufSort {
 
       // choose pivot
       a = ssPivot(Td, PA, first, last);
-      v = T[start + Td + SA[PA + SA[a]]];
+      v = T[Td + SA[PA + SA[a]]];
       swapInSA(first, a);
 
       // partition
-      for (b = first; (++b < last) && ((x = T[start + Td + SA[PA + SA[b]]]) == v); ) {
+      for (b = first; (++b < last) && ((x = T[Td + SA[PA + SA[b]]]) == v); ) {
       }
       if (((a = b) < last) && (x < v)) {
-        for (; (++b < last) && ((x = T[start + Td + SA[PA + SA[b]]]) <= v); ) {
+        for (; (++b < last) && ((x = T[Td + SA[PA + SA[b]]]) <= v); ) {
           if (x == v) {
             swapInSA(b, a);
             ++a;
@@ -1066,10 +1053,10 @@ public final class DivSufSort {
         }
       }
 
-      for (c = last; (b < --c) && ((x = T[start + Td + SA[PA + SA[c]]]) == v); ) {
+      for (c = last; (b < --c) && ((x = T[Td + SA[PA + SA[c]]]) == v); ) {
       }
       if ((b < (d = c)) && (x > v)) {
-        for (; (b < --c) && ((x = T[start + Td + SA[PA + SA[c]]]) >= v); ) {
+        for (; (b < --c) && ((x = T[Td + SA[PA + SA[c]]]) >= v); ) {
           if (x == v) {
             swapInSA(c, d);
             --d;
@@ -1079,13 +1066,13 @@ public final class DivSufSort {
 
       for (; b < c; ) {
         swapInSA(b, c);
-        for (; (++b < c) && ((x = T[start + Td + SA[PA + SA[b]]]) <= v); ) {
+        for (; (++b < c) && ((x = T[Td + SA[PA + SA[b]]]) <= v); ) {
           if (x == v) {
             swapInSA(b, a);
             ++a;
           }
         }
-        for (; (b < --c) && ((x = T[start + Td + SA[PA + SA[c]]]) >= v); ) {
+        for (; (b < --c) && ((x = T[Td + SA[PA + SA[c]]]) >= v); ) {
           if (x == v) {
             swapInSA(c, d);
             --d;
@@ -1111,7 +1098,7 @@ public final class DivSufSort {
 
         a = first + (b - a);
         c = last - (d - c);
-        b = (v <= T[start + Td + SA[PA + SA[a]] - 1]) ? a : ssPartition(PA, a, c, depth);
+        b = (v <= T[Td + SA[PA + SA[a]] - 1]) ? a : ssPartition(PA, a, c, depth);
 
         if ((a - first) <= (last - c)) {
           if ((last - c) <= (c - b)) {
@@ -1151,7 +1138,7 @@ public final class DivSufSort {
 
       } else {
         limit += 1;
-        if (T[start + Td + SA[PA + SA[first]] - 1] < v) {
+        if (T[Td + SA[PA + SA[first]] - 1] < v) {
           first = ssPartition(PA, first, last, depth);
           limit = ssIlg(last - first);
         }
@@ -1190,39 +1177,35 @@ public final class DivSufSort {
    */
   private int ssMedian5(int Td, int PA, int v1, int v2, int v3, int v4, int v5) {
     int t;
-    if (T[start + Td + SA[PA + SA[v2]]] > T[start + Td + SA[PA + SA[v3]]]) {
+    if (T[Td + SA[PA + SA[v2]]] > T[Td + SA[PA + SA[v3]]]) {
       t = v2;
       v2 = v3;
       v3 = t;
 
     }
-    if (T[start + Td + SA[PA + SA[v4]]] > T[start + Td + SA[PA + SA[v5]]]) {
+    if (T[Td + SA[PA + SA[v4]]] > T[Td + SA[PA + SA[v5]]]) {
       t = v4;
       v4 = v5;
       v5 = t;
     }
-    if (T[start + Td + SA[PA + SA[v2]]] > T[start + Td + SA[PA + SA[v4]]]) {
+    if (T[Td + SA[PA + SA[v2]]] > T[Td + SA[PA + SA[v4]]]) {
       t = v2;
-      v2 = v4;
       v4 = t;
       t = v3;
       v3 = v5;
       v5 = t;
     }
-    if (T[start + Td + SA[PA + SA[v1]]] > T[start + Td + SA[PA + SA[v3]]]) {
+    if (T[Td + SA[PA + SA[v1]]] > T[Td + SA[PA + SA[v3]]]) {
       t = v1;
       v1 = v3;
       v3 = t;
     }
-    if (T[start + Td + SA[PA + SA[v1]]] > T[start + Td + SA[PA + SA[v4]]]) {
+    if (T[Td + SA[PA + SA[v1]]] > T[Td + SA[PA + SA[v4]]]) {
       t = v1;
-      v1 = v4;
       v4 = t;
-      t = v3;
       v3 = v5;
-      v5 = t;
     }
-    if (T[start + Td + SA[PA + SA[v3]]] > T[start + Td + SA[PA + SA[v4]]]) {
+    if (T[Td + SA[PA + SA[v3]]] > T[Td + SA[PA + SA[v4]]]) {
       return v4;
     }
     return v3;
@@ -1232,13 +1215,13 @@ public final class DivSufSort {
    * Returns the median of three elements.
    */
   private int ssMedian3(int Td, int PA, int v1, int v2, int v3) {
-    if (T[start + Td + SA[PA + SA[v1]]] > T[start + Td + SA[PA + SA[v2]]]) {
+    if (T[Td + SA[PA + SA[v1]]] > T[Td + SA[PA + SA[v2]]]) {
       int t = v1;
       v1 = v2;
       v2 = t;
     }
-    if (T[start + Td + SA[PA + SA[v2]]] > T[start + Td + SA[PA + SA[v3]]]) {
-      if (T[start + Td + SA[PA + SA[v1]]] > T[start + Td + SA[PA + SA[v3]]]) {
+    if (T[Td + SA[PA + SA[v2]]] > T[Td + SA[PA + SA[v3]]]) {
+      if (T[Td + SA[PA + SA[v1]]] > T[Td + SA[PA + SA[v3]]]) {
         return v1;
       } else {
         return v3;
@@ -1281,7 +1264,7 @@ public final class DivSufSort {
     m = size;
     if ((size % 2) == 0) {
       m--;
-      if (T[start + Td + SA[PA + SA[sa + (m / 2)]]] < T[start + Td + SA[PA + SA[sa + m]]]) {
+      if (T[Td + SA[PA + SA[sa + (m / 2)]]] < T[Td + SA[PA + SA[sa + m]]]) {
         swapInSA(sa + m, sa + (m / 2));
       }
     }
@@ -1311,10 +1294,10 @@ public final class DivSufSort {
     int c, d, e;
 
     for (
-      v = SA[sa + i], c = T[start + Td + SA[PA + v]];
+      v = SA[sa + i], c = T[Td + SA[PA + v]];
       (j = 2 * i + 1) < size; SA[sa + i] = SA[sa + k], i = k) {
-      d = T[start + Td + SA[PA + SA[sa + (k = j++)]]];
-      if (d < (e = T[start + Td + SA[PA + SA[sa + j]]])) {
+      d = T[Td + SA[PA + SA[sa + (k = j++)]]];
+      if (d < (e = T[Td + SA[PA + SA[sa + j]]])) {
         k = j;
         d = e;
       }
@@ -1331,7 +1314,7 @@ public final class DivSufSort {
    */
   private static int ssIlg(int n) {
 
-    return ((n & 0xff00) != 0) ? 8 + lg_table[(n >> 8) & 0xff] : 0 + lg_table[(n >> 0) & 0xff];
+    return ((n & 0xff00) != 0) ? (8 + lg_table[(n >> 8) & 0xff]) : lg_table[n & 0xff];
   }
 
   /**
@@ -1391,8 +1374,7 @@ public final class DivSufSort {
   /**
    *
    */
-  private TRPartitionResult trPartition(int ISAd, int first, int middle, int last, int pa,
-    int pb, int v) {
+  private TRPartitionResult trPartition(int ISAd, int first, int middle, int last, int v) {
     int a, b, c, d, e, f;// ptr
     int t, s, x = 0;
 
@@ -1455,8 +1437,8 @@ public final class DivSufSort {
   private void trIntroSort(int ISA, int ISAd, int first, int last, TRBudget budget) {
     final int STACK_SIZE = TR_STACKSIZE;
     StackElement[] stack = new StackElement[STACK_SIZE];
-    int a = 0, b = 0, c;// pointers
-    int v, x = 0;
+    int a, b, c;// pointers
+    int v, x;
     int incr = ISAd - ISA;
     int limit, next;
     int ssize, trlink = -1;
@@ -1464,7 +1446,7 @@ public final class DivSufSort {
       if (limit < 0) {
         if (limit == -1) {
                     /* tandem repeat partition */
-          TRPartitionResult res = trPartition(ISAd - incr, first, first, last, a, b, last - 1);
+          TRPartitionResult res = trPartition(ISAd - incr, first, first, last, last - 1);
           a = res.a;
           b = res.b;
                     /* update ranks */
@@ -1647,7 +1629,7 @@ public final class DivSufSort {
       v = SA[ISAd + SA[first]];
 
       // partition
-      TRPartitionResult res = trPartition(ISAd, first, first + 1, last, a, b, v);
+      TRPartitionResult res = trPartition(ISAd, first, first + 1, last, v);
       a = res.a;
       b = res.b;
 
@@ -1846,7 +1828,6 @@ public final class DivSufSort {
     }
     if (SA[ISAd + SA[v2]] > SA[ISAd + SA[v4]]) {
       t = v2;
-      v2 = v4;
       v4 = t;
       t = v3;
       v3 = v5;
@@ -1859,11 +1840,8 @@ public final class DivSufSort {
     }
     if (SA[ISAd + SA[v1]] > SA[ISAd + SA[v4]]) {
       t = v1;
-      v1 = v4;
       v4 = t;
-      t = v3;
       v3 = v5;
-      v5 = t;
     }
     if (SA[ISAd + SA[v3]] > SA[ISAd + SA[v4]]) {
       return v4;
@@ -2046,7 +2024,7 @@ public final class DivSufSort {
       (((n & 0xff000000) != 0) ?
         24 + lg_table[(n >> 24) & 0xff] :
         16 + lg_table[(n >> 16) & 0xff]) :
-      (((n & 0x0000ff00) != 0) ? 8 + lg_table[(n >> 8) & 0xff] : 0 + lg_table[(n >> 0) & 0xff]);
+      (n & 0x0000ff00) != 0 ? 8 + lg_table[n >> 8 & 0xff] : lg_table[n & 0xff];
   }
 
 }
